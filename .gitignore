@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Claude Code files (local, not shared)
+.claude/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# SQLite databases
+*.db
+
+# Pytest
+.pytest_cache/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
