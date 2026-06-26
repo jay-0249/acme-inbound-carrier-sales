@@ -120,4 +120,99 @@ Checks whether a carrier is eligible to operate by querying the FMCSA QCMobile d
 
 ---
 
-*Later tasks append /negotiate, /calls, and /metrics here.*
+---
+
+## Calls
+
+### POST /calls
+
+Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook after every session ends. Safe to call multiple times for the same `run_id`; only non-null fields in the request overwrite existing values.
+
+**Request body** (`Content-Type: application/json`):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `run_id` | string | Yes | HappyRobot `current.run_id` |
+| `carrier_eligible` | boolean | No | Accepts `true`/`false` (bool or string). Set from the `/verify-carrier` result. |
+| `outcome` | string | No | e.g. `booked`, `no_match`, `ineligible`, `price_gap`, `transferred` |
+| `outcome_source` | string | No | `resolved` or `classified`. Defaults to `classified` when outcome is set and no source is given. A `resolved` outcome on an existing row cannot be overwritten by a later `classified` post. |
+| `sentiment` | string | No | `positive`, `negative`, or `neutral` |
+| `duration` | number | No | Call duration in seconds |
+| `run_url` | string | No | HappyRobot run permalink |
+| `mc_number` | string | No | Carrier MC number |
+| `carrier_name` | string | No | Carrier legal name |
+| `load_id` | string | No | Matched load ID |
+| `final_rate` | number | No | Agreed rate in USD |
+
+`load_found` is intentionally absent from the request body. Whether a load was found is captured by the outcome classifier via the `load_not_found` tag; setting it from `load_id` presence would be wrong because `load_id` is just the identifier the carrier mentioned, not confirmation that a matching load was returned.
+
+**Response** `200 OK` — the upserted call row:
+
+```json
+{
+  "run_id": "run-abc123",
+  "mc_number": "288570",
+  "carrier_name": "FEDEX GROUND PACKAGE SYSTEM CORPORATION",
+  "carrier_eligible": null,
+  "load_id": "LD-001",
+  "load_found": null,
+  "outcome": "booked",
+  "outcome_source": "classified",
+  "sentiment": "positive",
+  "final_rate": 1300.0,
+  "rounds": 2,
+  "duration": 180.0,
+  "run_url": null,
+  "created_at": "2026-06-26T10:00:00",
+  "updated_at": "2026-06-26T10:01:00"
+}
+```
+
+`rounds` is always recomputed as the count of `negotiation_events` rows for this `run_id`.
+
+**Status codes:**
+
+| Code | Condition |
+|------|-----------|
+| `200` | Row created or updated |
+| `401` | Missing or invalid `X-API-Key` |
+| `422` | `run_id` missing from request body |
+
+---
+
+## Database Tables
+
+### calls
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `run_id` | text PK | HappyRobot run identifier |
+| `mc_number` | text | nullable |
+| `carrier_name` | text | nullable |
+| `carrier_eligible` | boolean | nullable; set by earlier tool calls |
+| `load_id` | text | nullable |
+| `load_found` | boolean | nullable; set by earlier tool calls |
+| `outcome` | text | nullable |
+| `outcome_source` | text | nullable; `resolved` or `classified` |
+| `sentiment` | text | nullable |
+| `final_rate` | numeric | nullable |
+| `rounds` | int | nullable; recomputed from `negotiation_events` on every upsert |
+| `duration` | numeric | nullable; seconds |
+| `run_url` | text | nullable |
+| `created_at` | timestamp | set on insert |
+| `updated_at` | timestamp | updated on every upsert |
+
+### negotiation_events
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | int PK | autoincrement |
+| `run_id` | text (indexed) | no FK constraint; events may arrive before the calls row exists |
+| `round` | int | negotiation round number |
+| `load_id` | text | load being negotiated |
+| `carrier_offer` | numeric | carrier's offer in USD |
+| `agent_price` | numeric | agent's counter or accepted price |
+| `decision` | text | `accept`, `counter`, or `final` |
+| `created_at` | timestamp | set on insert |
+
+*Later tasks append /negotiate and /metrics here.*

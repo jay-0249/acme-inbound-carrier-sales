@@ -17,6 +17,16 @@ Entries are appended as tasks are completed. Each line: decision, then why.
 - **SQLite `check_same_thread` not needed** - using async sessions; aiosqlite handles thread safety internally.
 - **`tmp_path` fixture for test DB** - each test function gets an isolated file-backed SQLite; avoids shared-memory URI complexity and connection pool conflicts between the test setup code and the ASGI app.
 
+## Task 3 - Call records and POST /calls
+
+- **run_id-keyed upsert, not INSERT** - HappyRobot may call the webhook more than once for the same run; idempotent upsert means duplicate posts are safe and future tool calls can pre-create the row before the webhook fires.
+- **"resolved" outcome wins over "classified"** - the deterministic /resolve endpoint is the authoritative source of truth; the LLM classifier's label must never silently overwrite a human-verified outcome.
+- **No FK from negotiation_events to calls** - negotiation events are written mid-call before the webhook fires; a hard FK would either block those writes or require the calls row to exist first, coupling two independent write paths.
+- **rounds always recomputed, not stored incrementally** - counting from negotiation_events on every upsert is O(n) but n is at most 3; avoids drift between the stored counter and the actual event log.
+- **outcome_source defaults to "classified" on insert** - makes the source field non-null whenever outcome is set, so the dashboard can always filter by source without null-checks.
+- **carrier_eligible accepts bool or string in CallCreate** - HappyRobot passes extracted values as strings; tolerant coercion ("true"/"True"/true -> True, "false"/"False"/false -> False, anything else -> None) means the endpoint works regardless of how the platform serializes the field.
+- **load_found excluded from CallCreate** - whether a load was found is captured by the outcome classifier's `load_not_found` tag; a load_id being present does not imply the load was found (it is the carrier's stated reference, not a confirmed match).
+
 ## Task 2 - FMCSA carrier verification endpoint
 
 - **HTTP 200 for MC-not-found** - the voice agent has a single branch for "not eligible"; a 404 would require a second status-code check for the same outcome.

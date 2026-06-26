@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import Settings, get_settings
 from app.db.database import Base, get_db
-from app.db.models import Load  # noqa: F401 — registers model with Base
+from app.db.models import Call, Load, NegotiationEvent  # noqa: F401 — registers models with Base
 from app.db.seed import SEED_LOADS
 from app.main import app
 
