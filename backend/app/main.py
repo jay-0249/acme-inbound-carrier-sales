@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.calls import router as calls_router
 from app.api.carrier import router as carrier_router
 from app.api.loads import router as loads_router
+from app.api.negotiate import router as negotiate_router
 from app.db.database import Base, get_engine
 
 
@@ -29,3 +30,4 @@ app = FastAPI(
 app.include_router(loads_router)
 app.include_router(carrier_router)
 app.include_router(calls_router)
+app.include_router(negotiate_router)

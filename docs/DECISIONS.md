@@ -24,6 +24,17 @@ Entries are appended as tasks are completed. Each line: decision, then why.
 - **No FK from negotiation_events to calls** - negotiation events are written mid-call before the webhook fires; a hard FK would either block those writes or require the calls row to exist first, coupling two independent write paths.
 - **rounds always recomputed, not stored incrementally** - counting from negotiation_events on every upsert is O(n) but n is at most 3; avoids drift between the stored counter and the actual event log.
 - **outcome_source defaults to "classified" on insert** - makes the source field non-null whenever outcome is set, so the dashboard can always filter by source without null-checks.
+## Task 4 - POST /negotiate and relative-date seed
+
+- **Front-loaded ladder (60/85/100% of band)** - biggest counter first to close fast; tapering to ceiling avoids giving away the room on round 1 while preserving a credible final offer.
+- **Server-owned round count from negotiation_events** - the agent never supplies a round number; `COUNT(events WHERE run_id) + 1` is the only source of truth, making hallucinated counts impossible.
+- **Absolute ceiling clamp as independent safety net** - `min(agent_price, ceiling)` is applied after all ladder and rounding math; it holds even if the ladder formula is later changed or broken.
+- **Accept price is exact carrier_offer, not rounded** - rounding an accepted price up would mean paying more than the carrier asked; rounding down is bad faith; keeping it exact is the only defensible choice.
+- **/negotiate upserts calls.final_rate only on accept** - a counter or final that never closes leaves final_rate null, which correctly signals "no deal" to the dashboard.
+- **Seed pickup dates computed relative to today at import time** - hardcoded 2026 dates would all fall into the <=2-day urgency tier the day after deployment; relative offsets keep all three tiers live for any demo date.
+
+## Task 3 - Call records and POST /calls
+
 - **carrier_eligible accepts bool or string in CallCreate** - HappyRobot passes extracted values as strings; tolerant coercion ("true"/"True"/true -> True, "false"/"False"/false -> False, anything else -> None) means the endpoint works regardless of how the platform serializes the field.
 - **load_found excluded from CallCreate** - whether a load was found is captured by the outcome classifier's `load_not_found` tag; a load_id being present does not imply the load was found (it is the carrier's stated reference, not a confirmed match).
 

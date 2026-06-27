@@ -215,4 +215,80 @@ Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook af
 | `decision` | text | `accept`, `counter`, or `final` |
 | `created_at` | timestamp | set on insert |
 
-*Later tasks append /negotiate and /metrics here.*
+---
+
+## Negotiate
+
+### POST /negotiate
+
+Runs one round of deterministic price negotiation. The server owns all pricing math and the round counter. The agent passes only what it heard from the carrier; it never computes a price or supplies a round number.
+
+**Request body:**
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `run_id` | string | Yes | HappyRobot `current.run_id` |
+| `load_id` | string | Yes | Load being negotiated; 404 if not found |
+| `carrier_offer` | number | Yes | Dollar amount the carrier just stated; must be > 0 |
+
+**Response** `200 OK`:
+
+```json
+{
+  "run_id": "run-abc123",
+  "round": 1,
+  "decision": "counter",
+  "agent_price": 1300.0,
+  "ceiling": 1350.0,
+  "negotiation_status": "negotiating"
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `round` | Server-derived from `COUNT(negotiation_events WHERE run_id)` + 1 |
+| `decision` | `accept` — carrier offer accepted at carrier's price; `counter` — broker counters at `agent_price`; `final` — ceiling reached, take it or leave it |
+| `agent_price` | The dollar figure the agent reads to the carrier |
+| `ceiling` | Urgency-scaled ceiling, exposed for observability |
+| `negotiation_status` | `ceiling_reached` when `decision == "final"`, else `negotiating` |
+
+**Urgency ceiling tiers** (computed from days until `pickup_datetime`):
+
+| Days to pickup | Multiplier | Example (rate $1,250) |
+|----------------|------------|----------------------|
+| <= 2 (incl. today / past) | 1.08 | ceiling $1,350 |
+| 3-5 | 1.06 | ceiling $1,325 |
+| > 5 | 1.04 | ceiling $1,300 |
+
+**Front-loaded ladder** (steps rounded to nearest $25, clamped to ceiling):
+
+| Round | Step formula |
+|-------|-------------|
+| 1 | `loadboard_rate + 0.60 * band` |
+| 2 | `loadboard_rate + 0.85 * band` |
+| >= 3 | `ceiling` |
+
+where `band = ceiling - loadboard_rate`.
+
+**Decision logic:**
+- `carrier_offer <= step` -> `accept` at `carrier_offer` (never pay more than asked)
+- `round < 3` and offer above step -> `counter` at `step`
+- `round >= 3` and offer still above ceiling -> `final` at `ceiling`
+- Guardrail: `agent_price = min(agent_price, ceiling)` for `counter` and `final`, independent of ladder math.
+
+**On accept:** upserts `calls.final_rate = agent_price` and sets `calls.load_id` if not already set. Creates the `calls` row if absent (webhook fires after `/negotiate`). Does not touch `outcome`, `outcome_source`, `sentiment`, or `rounds`.
+
+**On non-accept:** `final_rate` is never written. A carrier who walks away leaves `final_rate` null.
+
+Each invocation writes exactly one `negotiation_events` row and advances the round counter by one.
+
+**Status codes:**
+
+| Code | Condition |
+|------|-----------|
+| `200` | Negotiation round completed |
+| `401` | Missing or invalid `X-API-Key` |
+| `404` | `load_id` not found |
+| `422` | Missing required field or `carrier_offer <= 0` |
+
+*Later tasks append /metrics here.*

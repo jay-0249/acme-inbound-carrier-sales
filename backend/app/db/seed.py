@@ -1,23 +1,29 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Load
 
-# Today: 2026-06-24. Urgency tiers for negotiation ceiling demo:
-#   <=2 days (ceiling x1.15): pickup Jun 24-25
-#   3-5 days (ceiling x1.10): pickup Jun 27-29
-#   >5 days  (ceiling x1.05): pickup Jul 1+
 
+def _dt(days: int, hour: int) -> datetime:
+    """Naive datetime at `hour` on the date `days` from today. Evaluated at import time."""
+    d = date.today() + timedelta(days=days)
+    return datetime(d.year, d.month, d.day, hour)
+
+
+# Pickup dates are relative to today so urgency tiers are always demoable:
+#   days_to_pickup <= 2  -> 8% ceiling tier  (LD-001, LD-002, LD-010)
+#   3 <= days <= 5       -> 6% ceiling tier  (LD-008, LD-003, LD-004)
+#   days > 5             -> 4% ceiling tier  (LD-005, LD-006, LD-007, LD-009)
 SEED_LOADS: list[dict] = [
-    # --- URGENT (<=2 days) ---
+    # --- URGENT (<=2 days, 8% ceiling) ---
     {
         "load_id": "LD-001",
         "origin": "Chicago, IL",
         "destination": "Detroit, MI",
-        "pickup_datetime": datetime(2026, 6, 25, 8, 0),
-        "delivery_datetime": datetime(2026, 6, 25, 16, 0),
+        "pickup_datetime": _dt(0, 8),
+        "delivery_datetime": _dt(0, 16),
         "equipment_type": "dry_van",
         "loadboard_rate": 1250.0,
         "notes": "Dock appointment required. Contact warehouse 30 min before arrival.",
@@ -31,8 +37,8 @@ SEED_LOADS: list[dict] = [
         "load_id": "LD-002",
         "origin": "Dallas, TX",
         "destination": "Atlanta, GA",
-        "pickup_datetime": datetime(2026, 6, 25, 6, 0),
-        "delivery_datetime": datetime(2026, 6, 26, 10, 0),
+        "pickup_datetime": _dt(1, 6),
+        "delivery_datetime": _dt(2, 10),
         "equipment_type": "reefer",
         "loadboard_rate": 2100.0,
         "notes": "Temp 34F. Fresh produce, time critical. Continuous temp log required.",
@@ -46,8 +52,8 @@ SEED_LOADS: list[dict] = [
         "load_id": "LD-010",
         "origin": "Atlanta, GA",
         "destination": "Boston, MA",
-        "pickup_datetime": datetime(2026, 6, 25, 10, 0),
-        "delivery_datetime": datetime(2026, 6, 26, 18, 0),
+        "pickup_datetime": _dt(2, 10),
+        "delivery_datetime": _dt(3, 18),
         "equipment_type": "dry_van",
         "loadboard_rate": 2750.0,
         "notes": "Medical supplies. Handle with care. No stacking.",
@@ -57,13 +63,28 @@ SEED_LOADS: list[dict] = [
         "miles": 1110,
         "dimensions": "48x96x96 in",
     },
-    # --- MODERATE (3-5 days) ---
+    # --- MODERATE (3-5 days, 6% ceiling) ---
+    {
+        "load_id": "LD-008",
+        "origin": "Kansas City, MO",
+        "destination": "Denver, CO",
+        "pickup_datetime": _dt(3, 8),
+        "delivery_datetime": _dt(4, 8),
+        "equipment_type": "reefer",
+        "loadboard_rate": 2400.0,
+        "notes": "HAZMAT Class 9. Temp 36-46F. Driver must have HAZMAT endorsement.",
+        "weight": 30000,
+        "commodity_type": "Pharmaceuticals",
+        "num_of_pieces": 200,
+        "miles": 600,
+        "dimensions": "48x96x96 in",
+    },
     {
         "load_id": "LD-003",
         "origin": "Houston, TX",
         "destination": "Charlotte, NC",
-        "pickup_datetime": datetime(2026, 6, 28, 7, 0),
-        "delivery_datetime": datetime(2026, 6, 29, 15, 0),
+        "pickup_datetime": _dt(4, 7),
+        "delivery_datetime": _dt(5, 15),
         "equipment_type": "flatbed",
         "loadboard_rate": 3200.0,
         "notes": "OVERSIZE. Width 14 ft. Pilot car required. Permit in progress.",
@@ -77,8 +98,8 @@ SEED_LOADS: list[dict] = [
         "load_id": "LD-004",
         "origin": "Los Angeles, CA",
         "destination": "Phoenix, AZ",
-        "pickup_datetime": datetime(2026, 6, 27, 9, 0),
-        "delivery_datetime": datetime(2026, 6, 27, 18, 0),
+        "pickup_datetime": _dt(5, 9),
+        "delivery_datetime": _dt(5, 18),
         "equipment_type": "dry_van",
         "loadboard_rate": 950.0,
         "notes": None,
@@ -88,12 +109,13 @@ SEED_LOADS: list[dict] = [
         "miles": 370,
         "dimensions": "48x96x96 in",
     },
+    # --- LOW URGENCY (>5 days, 4% ceiling) ---
     {
         "load_id": "LD-005",
         "origin": "Memphis, TN",
         "destination": "Miami, FL",
-        "pickup_datetime": datetime(2026, 6, 29, 6, 0),
-        "delivery_datetime": datetime(2026, 6, 30, 14, 0),
+        "pickup_datetime": _dt(7, 6),
+        "delivery_datetime": _dt(8, 14),
         "equipment_type": "reefer",
         "loadboard_rate": 2800.0,
         "notes": "Temp -10F. Frozen food. Keep doors closed at all times.",
@@ -104,27 +126,11 @@ SEED_LOADS: list[dict] = [
         "dimensions": "48x96x96 in",
     },
     {
-        "load_id": "LD-008",
-        "origin": "Kansas City, MO",
-        "destination": "Denver, CO",
-        "pickup_datetime": datetime(2026, 6, 28, 8, 0),
-        "delivery_datetime": datetime(2026, 6, 29, 8, 0),
-        "equipment_type": "reefer",
-        "loadboard_rate": 2400.0,
-        "notes": "HAZMAT Class 9. Temp 36-46F. Driver must have HAZMAT endorsement.",
-        "weight": 30000,
-        "commodity_type": "Pharmaceuticals",
-        "num_of_pieces": 200,
-        "miles": 600,
-        "dimensions": "48x96x96 in",
-    },
-    # --- LOW URGENCY (>5 days) ---
-    {
         "load_id": "LD-006",
         "origin": "Pittsburgh, PA",
         "destination": "Nashville, TN",
-        "pickup_datetime": datetime(2026, 7, 3, 8, 0),
-        "delivery_datetime": datetime(2026, 7, 4, 12, 0),
+        "pickup_datetime": _dt(9, 8),
+        "delivery_datetime": _dt(10, 12),
         "equipment_type": "flatbed",
         "loadboard_rate": 1800.0,
         "notes": "Tarps required. Secure construction equipment with chains.",
@@ -138,8 +144,8 @@ SEED_LOADS: list[dict] = [
         "load_id": "LD-007",
         "origin": "Seattle, WA",
         "destination": "Salt Lake City, UT",
-        "pickup_datetime": datetime(2026, 7, 5, 10, 0),
-        "delivery_datetime": datetime(2026, 7, 6, 16, 0),
+        "pickup_datetime": _dt(11, 10),
+        "delivery_datetime": _dt(12, 16),
         "equipment_type": "dry_van",
         "loadboard_rate": 1650.0,
         "notes": None,
@@ -153,8 +159,8 @@ SEED_LOADS: list[dict] = [
         "load_id": "LD-009",
         "origin": "Cleveland, OH",
         "destination": "Indianapolis, IN",
-        "pickup_datetime": datetime(2026, 7, 7, 7, 0),
-        "delivery_datetime": datetime(2026, 7, 7, 15, 0),
+        "pickup_datetime": _dt(14, 7),
+        "delivery_datetime": _dt(14, 15),
         "equipment_type": "flatbed",
         "loadboard_rate": 2100.0,
         "notes": "Heavy industrial machinery. Crane offload required at destination.",
