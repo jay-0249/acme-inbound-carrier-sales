@@ -108,6 +108,18 @@ this matches the demo scope and avoids premature surface area.
   `accept` (booked) or `final` (walked). This means the `settled_distribution` and
   `avg_rounds_to_close` metrics are grounded in the same logic the live agent uses.
 
+## API key scoping — read key vs. full key
+
+The dashboard's API key (`VITE_API_KEY`) is baked into the browser bundle at build time and is therefore public — anyone who opens DevTools can read it. Giving the browser the full `LOADS_API_KEY` would mean a public key can write call records and drive negotiation rounds, which is an unnecessary blast radius.
+
+**Decision:** split into two keys. `LOADS_API_KEY` (full access) is used only by the HappyRobot agent in its workflow config, which is server-side and never reaches the browser. `READ_API_KEY` is a separate credential accepted only on the four GET endpoints the dashboard needs. A read key on a write endpoint returns 401.
+
+**Implementation:** `verify_read_access` dependency in `security.py` accepts either key; `verify_api_key` (full) remains on write endpoints. `LOADS_API_KEY` is the superset — it works everywhere, so the agent needs only one key. If `READ_API_KEY` is unset (local dev, existing deployments), read endpoints fall back to accepting `LOADS_API_KEY` only, preserving backward compatibility without a migration step.
+
+**Why not scopes/JWTs:** this is a demo POC with two actors (agent and dashboard) and two operations (write and read). Two static keys is the simplest defensible design; adding a token system would be scope creep with no additional protection for the actual threat (browser key exposure).
+
+---
+
 ## Task 2 - FMCSA carrier verification endpoint
 
 - **HTTP 200 for MC-not-found** - the voice agent has a single branch for "not eligible"; a 404 would require a second status-code check for the same outcome.

@@ -5,6 +5,7 @@ import os
 os.environ["TESTING"] = "1"
 os.environ["LOADS_API_KEY"] = "test-api-key-abc123"
 os.environ["FMCSA_API_KEY"] = "test-fmcsa-abc123"
+os.environ["READ_API_KEY"]   = "test-read-key-xyz789"
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -16,11 +17,16 @@ from app.db.models import Call, Load, NegotiationEvent  # noqa: F401 — registe
 from app.db.seed import SEED_LOADS
 from app.main import app
 
-TEST_API_KEY = "test-api-key-abc123"
+TEST_API_KEY  = "test-api-key-abc123"
+TEST_READ_KEY = "test-read-key-xyz789"
 
 
 def _override_get_settings() -> Settings:
-    return Settings(LOADS_API_KEY=TEST_API_KEY, FMCSA_API_KEY="test-fmcsa-abc123")
+    return Settings(
+        LOADS_API_KEY=TEST_API_KEY,
+        FMCSA_API_KEY="test-fmcsa-abc123",
+        READ_API_KEY=TEST_READ_KEY,
+    )
 
 
 @pytest_asyncio.fixture

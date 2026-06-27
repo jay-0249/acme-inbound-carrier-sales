@@ -65,7 +65,8 @@ Visit `http://localhost:8000` for the dashboard and `http://localhost:8000/metri
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LOADS_API_KEY` | Yes | API key; sent by callers in `X-API-Key` header |
+| `LOADS_API_KEY` | Yes | Full-access key. Used by the HappyRobot agent on write endpoints. Never send to the browser. |
+| `READ_API_KEY` | Recommended | Read-only key accepted on GET endpoints. Baked into the browser bundle as `VITE_API_KEY`. If unset, read endpoints fall back to `LOADS_API_KEY`. |
 | `FMCSA_API_KEY` | Yes | FMCSA QCMobile web key for carrier authority lookup |
 | `DATABASE_URL` | No | SQLite path; defaults to `sqlite+aiosqlite:///./carrier_sales.db` |
 
@@ -75,7 +76,7 @@ Generate a key: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `VITE_API_KEY` | Yes | Must match `LOADS_API_KEY` |
+| `VITE_API_KEY` | Yes | Must match `READ_API_KEY` (read-only). Do not use `LOADS_API_KEY` here. |
 | `VITE_API_BASE` | No | Base URL of the API. Leave empty when same-origin (production build served by FastAPI). Set to `http://localhost:8000` only when running the Vite dev server separately. |
 
 ---

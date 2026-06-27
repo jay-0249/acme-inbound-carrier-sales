@@ -2,13 +2,22 @@
 
 Base URL (local dev): `http://localhost:8000`
 
-All endpoints require:
+All endpoints require an `X-API-Key` header. Two keys exist with different scopes:
 
-| Header | Value |
-|--------|-------|
-| `X-API-Key` | Value of `LOADS_API_KEY` env var |
+| Key (env var) | Scope | Used by |
+|---------------|-------|---------|
+| `LOADS_API_KEY` | Full access — all endpoints | HappyRobot agent workflow config. Never sent to the browser. |
+| `READ_API_KEY` | Read-only — GET endpoints only | Browser dashboard (`VITE_API_KEY`). Safe to bake into the bundle. |
 
-Missing or incorrect key returns `401 Unauthorized`.
+**Read-only endpoints** (accept either key):
+`GET /metrics`, `GET /loads`, `GET /loads/{id}`, `GET /verify-carrier/{mc_number}`
+
+**Write endpoints** (accept `LOADS_API_KEY` only):
+`POST /calls`, `POST /negotiate`
+
+A read key sent to a write endpoint returns `401`. Missing or unrecognised key returns `401` on any endpoint.
+
+**Fallback:** if `READ_API_KEY` is unset in the environment, read endpoints accept only `LOADS_API_KEY` (preserves local-dev behaviour without migration).
 
 ---
 

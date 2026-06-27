@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import verify_api_key
+from app.core.security import verify_read_access
 from app.db.database import get_db
 from app.db.models import Call, Load, NegotiationEvent
 from app.schemas.metrics import (
@@ -50,7 +50,7 @@ def _is_after_hours(ts: datetime) -> bool:
 @router.get("/metrics", response_model=MetricsResponse)
 async def get_metrics(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    _: str = Depends(verify_read_access),
 ) -> MetricsResponse:
     calls_result = await db.execute(select(Call))
     all_calls: list[Call] = list(calls_result.scalars().all())

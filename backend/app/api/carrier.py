@@ -2,7 +2,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.config import Settings, get_settings
-from app.core.security import verify_api_key
+from app.core.security import verify_read_access
 from app.schemas.carrier import CarrierVerifyResponse
 
 router = APIRouter(tags=["carrier"])
@@ -17,7 +17,7 @@ _FMCSA_DOCKET_URL = (
 async def verify_carrier(
     mc_number: str,
     settings: Settings = Depends(get_settings),
-    _: str = Depends(verify_api_key),
+    _: str = Depends(verify_read_access),
 ) -> CarrierVerifyResponse:
     # FMCSA docket-number lookup accepts only the numeric portion; strip the "MC-" or "MC"
     # prefix that the voice agent or caller may include (e.g. "MC-288570" -> "288570").
