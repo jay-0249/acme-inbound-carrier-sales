@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_api_key
 from app.db.database import get_db
-from app.db.models import Call, NegotiationEvent
+from app.db.models import Call, Load, NegotiationEvent
 from app.schemas.call import CallCreate, CallResponse
 
 router = APIRouter(tags=["calls"])
@@ -85,6 +85,15 @@ async def upsert_call(
 
         call.rounds = rounds_count or call.rounds
         call.updated_at = now
+
+    # Resolve final_rate for booked calls that bypassed /negotiate.
+    # Resolution order: accept-event price (already set) > loadboard_rate for
+    # booked > null. Never infer from the agent's last counter offer.
+    if call.final_rate is None and call.outcome == "booked" and call.load_id is not None:
+        load_res = await db.execute(select(Load).where(Load.load_id == call.load_id))
+        booked_load = load_res.scalar_one_or_none()
+        if booked_load is not None:
+            call.final_rate = booked_load.loadboard_rate
 
     await db.commit()
     await db.refresh(call)

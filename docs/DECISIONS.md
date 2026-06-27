@@ -2,6 +2,21 @@
 
 Entries are appended as tasks are completed. Each line: decision, then why.
 
+---
+
+## Assumptions
+
+### One load per call
+
+The `calls` table is one row per call, keyed by `run_id`, with single-valued columns (`load_id`, `final_rate`, `outcome`). This deliberately assumes a single load is negotiated per call, which matches the dominant real-world inbound pattern: a carrier calls about a specific load they saw posted and references its `load_id`.
+
+- `negotiation_events` is keyed by `run_id` AND `load_id`, so per-load negotiation history and round counts are correct even if more than one load is touched in a call (each load gets its own independent round budget; counts never bleed across loads).
+- The `calls` row, however, holds only ONE `load_id` / `final_rate` / `outcome`. If multiple loads are discussed in a single call, the call-level summary reflects only the most recently handled load.
+
+This is an accepted limitation for the POC, not a bug. Supporting multiple loads per call as first-class call records would require keying call-level outcomes by `run_id` + `load_id` (a "call" becoming a parent of one or more "load engagements") and aggregating the dashboard at that grain. Documented as future work.
+
+---
+
 ## Task 1 - Loads API slice
 
 - **Async SQLAlchemy with aiosqlite** - matches FastAPI's async model; keeps the pattern consistent for later endpoints that will do more I/O.
@@ -31,6 +46,7 @@ Entries are appended as tasks are completed. Each line: decision, then why.
 - **Absolute ceiling clamp as independent safety net** - `min(agent_price, ceiling)` is applied after all ladder and rounding math; it holds even if the ladder formula is later changed or broken.
 - **Accept price is exact carrier_offer, not rounded** - rounding an accepted price up would mean paying more than the carrier asked; rounding down is bad faith; keeping it exact is the only defensible choice.
 - **/negotiate upserts calls.final_rate only on accept** - a counter or final that never closes leaves final_rate null, which correctly signals "no deal" to the dashboard.
+- **final_rate resolution order in POST /calls: accept-event price > loadboard_rate for booked > null** - if /negotiate fired and the carrier accepted, that price is already on the row and is left untouched; if the carrier booked at the posted rate without negotiating, loadboard_rate is the only defensible figure; any other outcome leaves final_rate null. The agent's last counter offer is never used -- a carrier can reject every counter and then accept the posted rate, making the last offer wrong.
 - **Seed pickup dates computed relative to today at import time** - hardcoded 2026 dates would all fall into the <=2-day urgency tier the day after deployment; relative offsets keep all three tiers live for any demo date.
 
 ## Task 3 - Call records and POST /calls

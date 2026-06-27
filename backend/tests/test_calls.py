@@ -152,6 +152,60 @@ async def test_carrier_eligible_missing_is_none(client):
 
 
 @pytest.mark.asyncio
+async def test_booked_at_posted_rate_sets_final_rate(client):
+    # Carrier booked without negotiating; /negotiate never fired.
+    # Expect final_rate = LD-001 loadboard_rate (1250).
+    resp = await client.post(
+        "/calls",
+        json={"run_id": "run-book-01", "outcome": "booked", "load_id": "LD-001"},
+        headers=VALID,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["final_rate"] == 1250.0
+
+
+@pytest.mark.asyncio
+async def test_booked_with_existing_final_rate_not_overwritten(client):
+    # Simulate a row that already has final_rate set (e.g. by /negotiate accept).
+    await client.post(
+        "/calls",
+        json={"run_id": "run-book-02", "final_rate": 1325.0},
+        headers=VALID,
+    )
+    # Webhook fires with outcome=booked; must NOT overwrite the accept-event price.
+    resp = await client.post(
+        "/calls",
+        json={"run_id": "run-book-02", "outcome": "booked", "load_id": "LD-001"},
+        headers=VALID,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["final_rate"] == 1325.0  # accept-event price preserved
+
+
+@pytest.mark.asyncio
+async def test_non_booked_outcome_leaves_final_rate_null(client):
+    resp = await client.post(
+        "/calls",
+        json={"run_id": "run-book-03", "outcome": "negotiation_failed", "load_id": "LD-001"},
+        headers=VALID,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["final_rate"] is None
+
+
+@pytest.mark.asyncio
+async def test_booked_without_load_id_leaves_final_rate_null(client):
+    # Cannot resolve rate without knowing which load was booked.
+    resp = await client.post(
+        "/calls",
+        json={"run_id": "run-book-04", "outcome": "booked"},
+        headers=VALID,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["final_rate"] is None
+
+
+@pytest.mark.asyncio
 async def test_missing_api_key_returns_401(client):
     resp = await client.post("/calls", json={"run_id": "run-x"})
     assert resp.status_code == 401
