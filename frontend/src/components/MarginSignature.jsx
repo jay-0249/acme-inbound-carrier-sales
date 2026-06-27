@@ -1,70 +1,70 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import './MarginSignature.css'
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function pct(v) {
-  return (v * 100).toFixed(1) + '%'
-}
+// Shared axis: 0 to AXIS_MAX percent. Largest ceiling is 8%; 9 gives breathing room.
+const AXIS_MAX = 9
 
 function TierBar({ tier, index }) {
-  const ceilingPct = (tier.ceiling_multiplier - 1) * 100   // e.g. 8 for 1.08
-  const realizedPct = tier.avg_pct_over_loadboard * 100     // e.g. 1.73
+  const ceilingPct = (tier.ceiling_multiplier - 1) * 100  // e.g. 8.0
+  const realizedPct = tier.avg_pct_over_loadboard * 100   // e.g. 1.7
 
-  // Normalize both against the max ceiling (8%) so bars fill the available width
-  const maxCeiling = 8
-  const ceilingWidth = (ceilingPct / maxCeiling) * 100      // % of track width
-  const realizedWidth = (realizedPct / maxCeiling) * 100
+  // Positions on the shared 0–AXIS_MAX axis, expressed as % of track width
+  const realizedW = (realizedPct / AXIS_MAX) * 100
+  const ceilingX  = (ceilingPct  / AXIS_MAX) * 100
 
-  const [animated, setAnimated] = useState(prefersReducedMotion())
+  const reduced = prefersReducedMotion()
+  const [ready, setReady] = useState(reduced)
 
   useEffect(() => {
-    const delay = 300 + index * 120
-    const id = setTimeout(() => setAnimated(true), delay)
+    const id = setTimeout(() => setReady(true), 300 + index * 100)
     return () => clearTimeout(id)
   }, [index])
 
-  const gapPct = ceilingPct > 0 ? ((ceilingPct - realizedPct) / ceilingPct * 100).toFixed(0) : 0
+  const barDelay = index * 80
+  const barTransition   = reduced ? 'none' : `width 700ms cubic-bezier(0.16,1,0.3,1) ${barDelay}ms`
+  // Label fades in after the bar finishes travelling
+  const labelTransition = reduced ? 'none' : `opacity 250ms ease ${700 + barDelay}ms`
 
   return (
     <div className="tier-row">
-      <div className="tier-header">
-        <span className="tier-label">{tier.tier}</span>
-        <div className="tier-numbers">
-          <span className="tier-realized">{pct(tier.avg_pct_over_loadboard)}</span>
-          <span className="tier-sep"> / </span>
-          <span className="tier-ceiling">{pct(tier.ceiling_multiplier - 1)} ceiling</span>
-        </div>
-      </div>
-
-      {/* SVG bar: ceiling track + realized fill */}
-      <div className="tier-track-wrap" aria-hidden="true">
-        {/* ceiling track (full available width) */}
-        <div
-          className="tier-ceiling-track"
-          style={{ width: `${ceilingWidth}%` }}
-        />
-        {/* realized fill */}
+      <span className="tier-label">{tier.tier}</span>
+      <div
+        className="tier-track-wrap"
+        role="img"
+        aria-label={`${tier.tier}: ${realizedPct.toFixed(1)}% realized, ${ceilingPct.toFixed(1)}% ceiling`}
+      >
+        {/* Teal realized bar */}
         <div
           className="tier-realized-fill"
           style={{
-            width: animated ? `${realizedWidth}%` : '0%',
-            transition: prefersReducedMotion()
-              ? 'none'
-              : `width 700ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 80}ms`,
+            width: ready ? `${realizedW}%` : '0%',
+            transition: barTransition,
           }}
         />
-        {/* gap annotation */}
-        {ceilingPct > 0 && (
-          <div
-            className="tier-gap-label"
-            style={{ left: `${realizedWidth + 1}%` }}
-          >
-            {gapPct}% gap
-          </div>
-        )}
+
+        {/* Realized value label — appears at bar end after animation */}
+        <span
+          className="tier-realized-label"
+          style={{
+            left: `calc(${realizedW}% + 6px)`,
+            opacity: ready ? 1 : 0,
+            transition: labelTransition,
+          }}
+        >
+          {realizedPct.toFixed(1)}%
+        </span>
+
+        {/* Ceiling tick — vertical marker at that tier's ceiling */}
+        <div className="tier-ceiling-tick" style={{ left: `${ceilingX}%` }} />
+
+        {/* Ceiling label — above the tick */}
+        <span className="tier-ceiling-label" style={{ left: `${ceilingX}%` }}>
+          ceiling {ceilingPct.toFixed(0)}%
+        </span>
       </div>
     </div>
   )
@@ -93,9 +93,9 @@ export default function MarginSignature({ tiers }) {
       </div>
 
       <p className="margin-callout">
-        Realized margin runs well under the ceiling across all tiers.
-        The gap represents room the agent could hold firmer without
-        losing the lane — but tighter ceilings risk coverage.
+        Each bar is realized margin; the marker is that tier's ceiling. Realized
+        sits well below ceiling across all tiers — room to negotiate firmer, though
+        tighter ceilings on distant loads limit upside.
       </p>
     </div>
   )
