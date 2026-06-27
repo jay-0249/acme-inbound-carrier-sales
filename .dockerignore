@@ -1,0 +1,32 @@
+# Git history
+.git/
+.gitignore
+
+# Node — never copy; npm ci rebuilds inside the image
+node_modules/
+frontend/node_modules/
+
+# Built frontend — rebuilt inside the image
+frontend/dist/
+
+# Python virtualenvs and bytecode
+.venv/
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# SQLite DB — regenerated on container startup
+*.db
+
+# Secrets — injected at runtime / build time, never baked into the image
+.env
+backend/.env
+frontend/.env
+
+# Tests — not needed in the runtime image
+backend/tests/
+
+# Editor / OS noise
+.DS_Store
+*.swp
