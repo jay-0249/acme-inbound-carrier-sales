@@ -134,7 +134,7 @@ Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook af
 |-------|------|----------|-------|
 | `run_id` | string | Yes | HappyRobot `current.run_id` |
 | `carrier_eligible` | boolean | No | Accepts `true`/`false` (bool or string). Set from the `/verify-carrier` result. |
-| `outcome` | string | No | e.g. `booked`, `no_match`, `ineligible`, `price_gap`, `transferred` |
+| `outcome` | string | No | One of the outcome taxonomy tags (see Outcome taxonomy below). |
 | `outcome_source` | string | No | `resolved` or `classified`. Defaults to `classified` when outcome is set and no source is given. A `resolved` outcome on an existing row cannot be overwritten by a later `classified` post. |
 | `sentiment` | string | No | `positive`, `negative`, or `neutral` |
 | `duration` | number | No | Call duration in seconds |
@@ -180,6 +180,24 @@ Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook af
 
 ---
 
+## Outcome taxonomy
+
+The `calls.outcome` column stores exactly one of these seven tags. The dashboard, the post-call AI Classify node, and any `/resolve` work all use this same set:
+
+| Tag | Meaning |
+|-----|---------|
+| `booked` | Carrier agreed to the load and rate; agent confirmed or mock-transferred. |
+| `carrier_ineligible` | MC number not found or not allowed to operate. |
+| `load_not_found` | The reference number returned no matching load. |
+| `equipment_mismatch` | Carrier's equipment did not match the load requirement. |
+| `negotiation_failed` | Price was negotiated but no agreement reached. |
+| `not_interested` | Carrier declined for non-price reasons. |
+| `other` | None of the above or unclear. Also the proxy for "needed a human / fell through" in the automation-rate calculation. |
+
+Sentiment is a separate dimension: `positive`, `neutral`, `negative`.
+
+---
+
 ## Database Tables
 
 ### calls
@@ -192,7 +210,7 @@ Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook af
 | `carrier_eligible` | boolean | nullable; set by earlier tool calls |
 | `load_id` | text | nullable |
 | `load_found` | boolean | nullable; set by earlier tool calls |
-| `outcome` | text | nullable |
+| `outcome` | text | nullable; one of the seven taxonomy tags |
 | `outcome_source` | text | nullable; `resolved` or `classified` |
 | `sentiment` | text | nullable |
 | `final_rate` | numeric | nullable |
@@ -214,6 +232,8 @@ Upserts a call record by `run_id`. Called by the HappyRobot post-call webhook af
 | `agent_price` | numeric | agent's counter or accepted price |
 | `decision` | text | `accept`, `counter`, or `final` |
 | `created_at` | timestamp | set on insert |
+
+A `confirm_offer` response (see `/negotiate`) writes **no** `negotiation_events` row; it is advisory only.
 
 ---
 
@@ -240,17 +260,19 @@ Runs one round of deterministic price negotiation. The server owns all pricing m
   "decision": "counter",
   "agent_price": 1300.0,
   "ceiling": 1350.0,
-  "negotiation_status": "negotiating"
+  "negotiation_status": "negotiating",
+  "message": null
 }
 ```
 
 | Field | Notes |
 |-------|-------|
 | `round` | Server-derived from `COUNT(negotiation_events WHERE run_id)` + 1 |
-| `decision` | `accept` — carrier offer accepted at carrier's price; `counter` — broker counters at `agent_price`; `final` — ceiling reached, take it or leave it |
-| `agent_price` | The dollar figure the agent reads to the carrier |
+| `decision` | `accept` — carrier offer accepted at carrier's price; `counter` — broker counters at `agent_price`; `final` — ceiling reached, take it or leave it; `confirm_offer` — carrier offer is below the posted rate (likely a mis-transcription), advisory only |
+| `agent_price` | The dollar figure the agent reads to the carrier. `null` on `confirm_offer`. |
 | `ceiling` | Urgency-scaled ceiling, exposed for observability |
-| `negotiation_status` | `ceiling_reached` when `decision == "final"`, else `negotiating` |
+| `negotiation_status` | `ceiling_reached` when `decision == "final"`; `needs_confirmation` when `decision == "confirm_offer"`; else `negotiating` |
+| `message` | Internal-only note. Present on `confirm_offer` (names the posted rate, for logs and debugging). Never spoken to the carrier. `null` otherwise. |
 
 **Urgency ceiling tiers** (computed from days until `pickup_datetime`):
 
@@ -271,22 +293,25 @@ Runs one round of deterministic price negotiation. The server owns all pricing m
 where `band = ceiling - loadboard_rate`.
 
 **Decision logic:**
-- `carrier_offer <= step` -> `accept` at `carrier_offer` (never pay more than asked)
-- `round < 3` and offer above step -> `counter` at `step`
-- `round >= 3` and offer still above ceiling -> `final` at `ceiling`
+- `carrier_offer < loadboard_rate` -> `confirm_offer`: do **not** accept, counter, or final. Writes **no** `negotiation_events` row, sets **no** `final_rate`, and does **not** advance the round counter. Returns a `message` asking the agent to confirm the carrier's intended number (a carrier never agrees to less than the posted rate, so this is almost always a voice mis-transcription, e.g. "400" heard for "3400"). The agent re-asks neutrally and re-calls `/negotiate` once the number is corrected.
+- `carrier_offer <= step` (and `>= loadboard_rate`) -> `accept` at `carrier_offer` (never pay more than asked).
+- `round < 3` and offer above step -> `counter` at `step`.
+- `round >= 3` and offer still above ceiling -> `final` at `ceiling`.
 - Guardrail: `agent_price = min(agent_price, ceiling)` for `counter` and `final`, independent of ladder math.
 
 **On accept:** upserts `calls.final_rate = agent_price` and sets `calls.load_id` if not already set. Creates the `calls` row if absent (webhook fires after `/negotiate`). Does not touch `outcome`, `outcome_source`, `sentiment`, or `rounds`.
 
+**Counter-acceptance lock-in:** when the carrier verbally accepts the agent's counter, the agent re-calls `/negotiate` with `carrier_offer` set to the agreed counter price. Since that offer equals the current step (and is `>= loadboard_rate`), the endpoint returns `accept` and writes `final_rate` server-side. The final price is therefore always written by the backend on an accept event, never taken from the agent's spoken text.
+
 **On non-accept:** `final_rate` is never written. A carrier who walks away leaves `final_rate` null.
 
-Each invocation writes exactly one `negotiation_events` row and advances the round counter by one.
+Each invocation that returns `accept`, `counter`, or `final` writes exactly one `negotiation_events` row and advances the round counter by one. A `confirm_offer` response writes nothing and does not advance the counter.
 
 **Status codes:**
 
 | Code | Condition |
 |------|-----------|
-| `200` | Negotiation round completed |
+| `200` | Negotiation round completed (including `confirm_offer`) |
 | `401` | Missing or invalid `X-API-Key` |
 | `404` | `load_id` not found |
 | `422` | Missing required field or `carrier_offer <= 0` |
@@ -329,13 +354,13 @@ time-series. The frontend makes one call and renders all panels.
     ]
   },
   "outcomes": [
-    {"outcome": "booked",              "count": 28, "pct": 0.608695},
-    {"outcome": "negotiation_failed",  "count": 6,  "pct": 0.130434},
-    {"outcome": "carrier_ineligible",  "count": 3,  "pct": 0.065217},
-    {"outcome": "load_not_found",      "count": 3,  "pct": 0.065217},
-    {"outcome": "not_interested",      "count": 3,  "pct": 0.065217},
-    {"outcome": "equipment_mismatch",  "count": 2,  "pct": 0.043478},
-    {"outcome": "transferred_to_human","count": 1,  "pct": 0.021739}
+    {"outcome": "booked",             "count": 28, "pct": 0.608695},
+    {"outcome": "negotiation_failed", "count": 6,  "pct": 0.130434},
+    {"outcome": "carrier_ineligible", "count": 3,  "pct": 0.065217},
+    {"outcome": "load_not_found",     "count": 3,  "pct": 0.065217},
+    {"outcome": "not_interested",     "count": 3,  "pct": 0.065217},
+    {"outcome": "equipment_mismatch", "count": 2,  "pct": 0.043478},
+    {"outcome": "other",              "count": 1,  "pct": 0.021739}
   ],
   "top_decline_reason": {"outcome": "negotiation_failed", "count": 6},
   "sentiment": {"positive": 25, "neutral": 14, "negative": 7},
@@ -373,7 +398,7 @@ time-series. The frontend makes one call and renders all panels.
 | `value_model.*` | Explicitly modeled estimates. `assumed_loaded_wage_per_hour` ($48) and `assumed_agent_cost_per_call` ($0.75) are stated assumptions; all other figures are measured from the DB. The UI must display these as estimates with stated assumptions. |
 | `margin.by_urgency_tier` | Each entry has `avg_pct_over_loadboard` (realized, measured), `ceiling_multiplier` (designed ceiling: 1.08/1.06/1.04), and `loads` (booked count). Realized margin need not descend monotonically — posted-rate bookings pull tier averages down independently of urgency. The UI should display realized margin vs. ceiling per tier, not imply the realized values follow the ceiling pattern. Tier boundaries use the same `(pickup_date - today).days` formula as `/negotiate`. |
 | `margin.avg_pct_over_loadboard` | Mean over booked calls with a known load and final_rate. 0..1 float (multiply by 100 for %). |
-| `outcomes` | Ranked descending by count. `pct` sums to 1.0 over all entries. |
+| `outcomes` | Ranked descending by count. `pct` sums to 1.0 over all entries. Uses the seven taxonomy tags. |
 | `top_decline_reason` | Largest non-booked outcome. |
 | `negotiation.avg_rounds_to_close` | Average over booked-via-negotiation calls only (where the last event is `accept`). |
 | `negotiation.settled_distribution.walked` | Count of run_ids whose last event decision is `final` (ceiling hit, carrier walked). |

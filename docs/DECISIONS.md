@@ -27,10 +27,18 @@ This is an accepted limitation for the POC, not a bug. Supporting multiple loads
 - **Seed is idempotent (skip if table non-empty)** - safe to call on every startup restart; no duplicate-key errors if the DB already has data.
 - **Origin/destination filters use `ilike` partial match** - voice agents will say "Chicago" not "Chicago, IL"; substring match is more useful than exact match for free-text location fields.
 - **Equipment type filter is exact match** - equipment type is a controlled vocabulary (`dry_van`, `reefer`, `flatbed`); partial match would silently return wrong results.
-- **Seed data spread across all three urgency tiers** - ensures the negotiation ceiling logic (1.05/1.10/1.15) is visibly exercisable in the demo with different loads.
+- **Seed data spread across all three urgency tiers** - ensures the negotiation ceiling logic (1.08/1.06/1.04) is visibly exercisable in the demo with different loads.
 - **HAZMAT and oversize loads included in seed** - tests the matching gate's notes-checking path in a later task and makes the demo more realistic.
 - **SQLite `check_same_thread` not needed** - using async sessions; aiosqlite handles thread safety internally.
 - **`tmp_path` fixture for test DB** - each test function gets an isolated file-backed SQLite; avoids shared-memory URI complexity and connection pool conflicts between the test setup code and the ASGI app.
+
+## Task 2 - FMCSA carrier verification endpoint
+
+- **HTTP 200 for MC-not-found** - the voice agent has a single branch for "not eligible"; a 404 would require a second status-code check for the same outcome.
+- **HTTP 502 for FMCSA failures** - propagates upstream unavailability without leaking internal detail; the agent treats it as a hard stop and transfers to human.
+- **5-second timeout on FMCSA call** - keeps call latency bounded; FMCSA QCMobile is occasionally slow and a hung request would stall the voice session.
+- **`legalName` preferred over `dbaName`** - legal name is the authoritative carrier identity; DBA is a fallback for carriers that only register a trade name.
+- **`unittest.mock` for httpx, no extra test dependencies** - `respx` would be cleaner but adds a dependency; `AsyncMock` over `httpx.AsyncClient` is sufficient for the three required cases.
 
 ## Task 3 - Call records and POST /calls
 
@@ -39,6 +47,9 @@ This is an accepted limitation for the POC, not a bug. Supporting multiple loads
 - **No FK from negotiation_events to calls** - negotiation events are written mid-call before the webhook fires; a hard FK would either block those writes or require the calls row to exist first, coupling two independent write paths.
 - **rounds always recomputed, not stored incrementally** - counting from negotiation_events on every upsert is O(n) but n is at most 3; avoids drift between the stored counter and the actual event log.
 - **outcome_source defaults to "classified" on insert** - makes the source field non-null whenever outcome is set, so the dashboard can always filter by source without null-checks.
+- **carrier_eligible accepts bool or string in CallCreate** - HappyRobot passes extracted values as strings; tolerant coercion ("true"/"True"/true -> True, "false"/"False"/false -> False, anything else -> None) means the endpoint works regardless of how the platform serializes the field.
+- **load_found excluded from CallCreate** - whether a load was found is captured by the outcome classifier's `load_not_found` tag; a load_id being present does not imply the load was found (it is the carrier's stated reference, not a confirmed match).
+
 ## Task 4 - POST /negotiate and relative-date seed
 
 - **Front-loaded ladder (60/85/100% of band)** - biggest counter first to close fast; tapering to ceiling avoids giving away the room on round 1 while preserving a credible final offer.
@@ -48,11 +59,6 @@ This is an accepted limitation for the POC, not a bug. Supporting multiple loads
 - **/negotiate upserts calls.final_rate only on accept** - a counter or final that never closes leaves final_rate null, which correctly signals "no deal" to the dashboard.
 - **final_rate resolution order in POST /calls: accept-event price > loadboard_rate for booked > null** - if /negotiate fired and the carrier accepted, that price is already on the row and is left untouched; if the carrier booked at the posted rate without negotiating, loadboard_rate is the only defensible figure; any other outcome leaves final_rate null. The agent's last counter offer is never used -- a carrier can reject every counter and then accept the posted rate, making the last offer wrong.
 - **Seed pickup dates computed relative to today at import time** - hardcoded 2026 dates would all fall into the <=2-day urgency tier the day after deployment; relative offsets keep all three tiers live for any demo date.
-
-## Task 3 - Call records and POST /calls
-
-- **carrier_eligible accepts bool or string in CallCreate** - HappyRobot passes extracted values as strings; tolerant coercion ("true"/"True"/true -> True, "false"/"False"/false -> False, anything else -> None) means the endpoint works regardless of how the platform serializes the field.
-- **load_found excluded from CallCreate** - whether a load was found is captured by the outcome classifier's `load_not_found` tag; a load_id being present does not imply the load was found (it is the carrier's stated reference, not a confirmed match).
 
 ## Task 5 - GET /metrics and synthetic call-history seed
 
@@ -108,14 +114,6 @@ this matches the demo scope and avoids premature surface area.
   `accept` (booked) or `final` (walked). This means the `settled_distribution` and
   `avg_rounds_to_close` metrics are grounded in the same logic the live agent uses.
 
-## Task 2 - FMCSA carrier verification endpoint
-
-- **HTTP 200 for MC-not-found** - the voice agent has a single branch for "not eligible"; a 404 would require a second status-code check for the same outcome.
-- **HTTP 502 for FMCSA failures** - propagates upstream unavailability without leaking internal detail; the agent treats it as a hard stop and transfers to human.
-- **5-second timeout on FMCSA call** - keeps call latency bounded; FMCSA QCMobile is occasionally slow and a hung request would stall the voice session.
-- **`legalName` preferred over `dbaName`** - legal name is the authoritative carrier identity; DBA is a fallback for carriers that only register a trade name.
-- **`unittest.mock` for httpx, no extra test dependencies** - `respx` would be cleaner but adds a dependency; `AsyncMock` over `httpx.AsyncClient` is sufficient for the three required cases.
-
 ## confirm_offer — sub-loadboard offer floor
 
 **Problem.** A live call exposed a bug: a carrier mis-stated "400" when they meant "3400" on a $3,200 load. The server accepted `carrier_offer=400`, wrote `final_rate=400`, and the agent confirmed a rate the carrier never intended.
@@ -124,4 +122,12 @@ this matches the demo scope and avoids premature surface area.
 
 **Why not 422/reject.** A hard rejection would stall the agent with no recovery path inside the workflow. `confirm_offer` gives the agent a clear branch: ask the carrier to restate their number, then retry. The backend stays advisory; the conversational repair is the agent's job.
 
-**Scope.** The floor is strictly `carrier_offer < loadboard_rate`. At or above the posted rate (`==` included) the normal accept/counter/final path runs unchanged. An absurdly high offer is not a mis-transcription risk; it just becomes a counter or final at the ceiling.
+**No-anchor confirmation.** When the agent re-asks, it does NOT mention the posted rate. It asks a neutral "what rate were you looking for?" Naming the floor would anchor the carrier to the minimum the system entertains and weaken the negotiating position. The backend `message` field names the rate for logs and debugging only; it is never spoken to the carrier.
+
+**Scope.** The floor is strictly `carrier_offer < loadboard_rate`. At or above the posted rate (`==` included) the normal accept/counter/final path runs unchanged. An absurdly high offer is not a mis-transcription risk; it just becomes a counter or final at the ceiling. Known minor future work: repeated sub-loadboard offers loop without a bounded exit; add an attempt counter that escalates or wraps up gracefully after a few tries.
+
+## counter-acceptance lock-in
+
+**Problem.** A live call exposed a second bug: when the carrier verbally accepted the agent's counter, `final_rate` kept a stale value, because only an `accept` event writes `final_rate` and the verbal "yes" did not itself trigger one.
+
+**Decision.** When the carrier accepts a counter, the agent re-calls `/negotiate` with `carrier_offer` set to the agreed counter price. That offer equals the current step (and is `>= loadboard_rate`), so the endpoint returns `accept` and writes `final_rate` server-side. The booked price is therefore always written by the backend on an accept event, never taken from the agent's spoken text. Verified live: a "400" then "3400" call produced `confirm_offer`, then a counter ladder, then a lock-in accept; the final record showed `final_rate=3375`, `rounds=3`, `outcome=booked`.
