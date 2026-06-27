@@ -54,6 +54,44 @@ This is an accepted limitation for the POC, not a bug. Supporting multiple loads
 - **carrier_eligible accepts bool or string in CallCreate** - HappyRobot passes extracted values as strings; tolerant coercion ("true"/"True"/true -> True, "false"/"False"/false -> False, anything else -> None) means the endpoint works regardless of how the platform serializes the field.
 - **load_found excluded from CallCreate** - whether a load was found is captured by the outcome classifier's `load_not_found` tag; a load_id being present does not imply the load was found (it is the carrier's stated reference, not a confirmed match).
 
+## Task 5 - GET /metrics and synthetic call-history seed
+
+**Design summary.** The metrics endpoint is a single-query aggregation layer over
+the `calls`, `negotiation_events`, and `loads` tables. It returns one JSON payload
+covering capacity, margin, outcomes, sentiment, and negotiation depth. The frontend
+makes one call and renders all panels. No time-series, no filters, no sub-endpoints:
+this matches the demo scope and avoids premature surface area.
+
+- **Single GET /metrics payload** - the dashboard makes one round-trip; all panels
+  share the same snapshot timestamp; no waterfall of panel-level requests.
+- **value_model is explicitly a transparent estimate** - `rep_hours_freed * $48/hr -
+  calls * $0.75` is defensible as a first-order broker ROI model. The $48 loaded wage
+  and $0.75 agent cost are stated assumptions in both the response payload and the UI.
+  Every other metric is measured directly from the DB. Never label any value_model
+  figure as "savings" without the assumption caveat visible.
+- **calls_missed is always 0** - the agent answers every inbound call; there is no
+  missed-call signal from HappyRobot in the current integration. Returning 0 with a
+  documented stance is more honest than omitting the metric or fabricating a proxy.
+- **after_hours uses UTC proxy** - `created_at` is stored as naive UTC; treating it
+  as local time is a known approximation. For a POC demo all traffic is domestic US,
+  so the error is bounded. A future fix would store timezone alongside the timestamp.
+- **urgency tier in /metrics uses pickup_datetime from the joined load** - same
+  `(pickup_date - today).days` formula as /negotiate so tier assignments are
+  consistent across the system.
+- **Synthetic seed prefixed "seed-"** - all 40 synthetic call rows have `run_id`
+  starting with `seed-`. This lets `seed_calls()` use a single `SELECT ... LIKE 'seed-%'`
+  idempotency check (skip if any seed row exists), and keeps real test calls
+  unambiguously separate. To reseed: delete the DB and restart.
+- **Synthetic created_at spread across 14 days, ~22% after-hours** - timestamps are
+  computed relative to `date.today()` at seed time using `date.today() - timedelta(days=N)`.
+  Never hardcoded. After-hours rows use hours before 8 or at/after 19 (or weekend),
+  giving the "after-hours coverage" dashboard metric real texture without fabricating
+  a separate signal.
+- **Negotiation events for seed rows follow the ladder math** - intermediate events
+  use the 60%/85% band steps from `services/negotiation.py`; the final event is
+  `accept` (booked) or `final` (walked). This means the `settled_distribution` and
+  `avg_rounds_to_close` metrics are grounded in the same logic the live agent uses.
+
 ## Task 2 - FMCSA carrier verification endpoint
 
 - **HTTP 200 for MC-not-found** - the voice agent has a single branch for "not eligible"; a 404 would require a second status-code check for the same outcome.

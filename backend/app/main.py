@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.calls import router as calls_router
 from app.api.carrier import router as carrier_router
 from app.api.loads import router as loads_router
+from app.api.metrics import router as metrics_router
 from app.api.negotiate import router as negotiate_router
 from app.db.database import Base, get_engine
 
@@ -16,8 +17,9 @@ async def lifespan(app: FastAPI):
         engine = get_engine()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        from app.db.seed import seed_loads
+        from app.db.seed import seed_calls, seed_loads
         await seed_loads()
+        await seed_calls()
     yield
 
 
@@ -31,3 +33,4 @@ app.include_router(loads_router)
 app.include_router(carrier_router)
 app.include_router(calls_router)
 app.include_router(negotiate_router)
+app.include_router(metrics_router)

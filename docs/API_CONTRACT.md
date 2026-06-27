@@ -291,4 +291,97 @@ Each invocation writes exactly one `negotiation_events` row and advances the rou
 | `404` | `load_id` not found |
 | `422` | Missing required field or `carrier_offer <= 0` |
 
-*Later tasks append /metrics here.*
+---
+
+## Metrics
+
+### GET /metrics
+
+Returns all broker dashboard aggregates in a single payload. Computed from
+the `calls`, `negotiation_events`, and `loads` tables. No filters; no
+time-series. The frontend makes one call and renders all panels.
+
+**Response** `200 OK`:
+
+```json
+{
+  "capacity": {
+    "calls_handled": 46,
+    "calls_after_hours": 10,
+    "calls_missed": 0,
+    "booking_rate": 0.608695,
+    "loads_booked": 28,
+    "automation_rate": 0.978260
+  },
+  "value_model": {
+    "rep_hours_freed": 2.34,
+    "assumed_loaded_wage_per_hour": 48,
+    "assumed_agent_cost_per_call": 0.75,
+    "value_captured_usd": 78.18
+  },
+  "margin": {
+    "avg_pct_over_loadboard": 0.018500,
+    "total_dollars_over_loadboard": 1240.00,
+    "by_urgency_tier": [
+      {"tier": "<=2 days (8%)", "avg_pct_over_loadboard": 0.022, "loads": 9},
+      {"tier": "3-5 days (6%)", "avg_pct_over_loadboard": 0.018, "loads": 10},
+      {">5 days (4%)",           "avg_pct_over_loadboard": 0.011, "loads": 9}
+    ]
+  },
+  "outcomes": [
+    {"outcome": "booked",              "count": 28, "pct": 0.608695},
+    {"outcome": "negotiation_failed",  "count": 6,  "pct": 0.130434},
+    {"outcome": "carrier_ineligible",  "count": 3,  "pct": 0.065217},
+    {"outcome": "load_not_found",      "count": 3,  "pct": 0.065217},
+    {"outcome": "not_interested",      "count": 3,  "pct": 0.065217},
+    {"outcome": "equipment_mismatch",  "count": 2,  "pct": 0.043478},
+    {"outcome": "transferred_to_human","count": 1,  "pct": 0.021739}
+  ],
+  "top_decline_reason": {"outcome": "negotiation_failed", "count": 6},
+  "sentiment": {"positive": 25, "neutral": 14, "negative": 7},
+  "negotiation": {
+    "avg_rounds_to_close": 1.71,
+    "settled_distribution": {
+      "round_1": 8, "round_2": 9, "round_3": 3, "walked": 6
+    }
+  },
+  "recent_calls": [
+    {
+      "run_id": "seed-001",
+      "carrier_name": "ACME FREIGHT LLC",
+      "load_id": "LD-001",
+      "outcome": "booked",
+      "sentiment": "positive",
+      "final_rate": 1275.0,
+      "loadboard_rate": 1250.0,
+      "pct_over_loadboard": 0.02,
+      "rounds": 2,
+      "created_at": "2026-06-26T14:22:00",
+      "run_url": null
+    }
+  ]
+}
+```
+
+**Field notes:**
+
+| Field | Description |
+|-------|-------------|
+| `capacity.calls_missed` | Always 0. The agent answers every inbound call; there is no missed-call signal in the current HappyRobot integration. Documented as a measured stance, not a gap. |
+| `capacity.calls_after_hours` | `created_at` before 8am or at/after 6pm UTC, or on a Saturday/Sunday. |
+| `capacity.automation_rate` | Calls whose outcome is NOT `transferred_to_human`, divided by total. |
+| `value_model.*` | Explicitly modeled estimates. `assumed_loaded_wage_per_hour` ($48) and `assumed_agent_cost_per_call` ($0.75) are stated assumptions; all other figures are measured from the DB. The UI must display these as estimates with stated assumptions. |
+| `margin.by_urgency_tier` | Urgency tier uses the same `days_to_pickup` logic as `/negotiate`: (pickup_date - today).days, with tiers <=2 / 3-5 / >5. |
+| `margin.avg_pct_over_loadboard` | Mean over booked calls with a known load and final_rate. 0..1 float (multiply by 100 for %). |
+| `outcomes` | Ranked descending by count. `pct` sums to 1.0 over all entries. |
+| `top_decline_reason` | Largest non-booked outcome. |
+| `negotiation.avg_rounds_to_close` | Average over booked-via-negotiation calls only (where the last event is `accept`). |
+| `negotiation.settled_distribution.walked` | Count of run_ids whose last event decision is `final` (ceiling hit, carrier walked). |
+| `recent_calls` | Newest first, capped at 25. `pct_over_loadboard` is null if load or final_rate is unknown. |
+
+**Status codes:**
+
+| Code | Condition |
+|------|-----------|
+| `200` | Success |
+| `401` | Missing or invalid `X-API-Key` |
