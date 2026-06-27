@@ -162,16 +162,17 @@ async def test_round_is_server_derived(client):
 
 @pytest.mark.asyncio
 async def test_accept_sets_calls_final_rate_and_load_id(client):
+    # 1250 == loadboard_rate; step1 = 1300; 1250 <= 1300 -> accept at 1250
     resp = await client.post(
         "/negotiate",
-        json={"run_id": "neg-003", "load_id": "LD-001", "carrier_offer": 1200},
+        json={"run_id": "neg-003", "load_id": "LD-001", "carrier_offer": 1250},
         headers=VALID,
     )
     assert resp.json()["decision"] == "accept"
-    assert resp.json()["agent_price"] == 1200
+    assert resp.json()["agent_price"] == 1250
 
     calls = await client.post("/calls", json={"run_id": "neg-003"}, headers=VALID)
-    assert calls.json()["final_rate"] == 1200
+    assert calls.json()["final_rate"] == 1250
     assert calls.json()["load_id"] == "LD-001"
 
 
@@ -241,16 +242,17 @@ async def test_accept_does_not_overwrite_outcome_or_sentiment(client):
         headers=VALID,
     )
     # Accept on the same run_id should only touch final_rate
+    # 1250 == loadboard_rate -> accept (not sub-loadboard)
     await client.post(
         "/negotiate",
-        json={"run_id": "neg-007", "load_id": "LD-001", "carrier_offer": 1200},
+        json={"run_id": "neg-007", "load_id": "LD-001", "carrier_offer": 1250},
         headers=VALID,
     )
     calls = await client.post("/calls", json={"run_id": "neg-007"}, headers=VALID)
     assert calls.json()["outcome"] == "booked"
     assert calls.json()["outcome_source"] == "resolved"
     assert calls.json()["sentiment"] == "positive"
-    assert calls.json()["final_rate"] == 1200
+    assert calls.json()["final_rate"] == 1250
 
 
 @pytest.mark.asyncio
@@ -327,3 +329,92 @@ async def test_urgency_ceiling_tiers_in_response(client):
         headers=VALID,
     )
     assert r.json()["ceiling"] == pytest.approx(1716)
+
+
+# ─── CONFIRM_OFFER — sub-loadboard floor ─────────────────────────────────────
+
+# LD-001 loadboard_rate = 1250; anything < 1250 triggers confirm_offer.
+
+def test_sub_loadboard_offer_returns_confirm_offer_service():
+    """Service unit test: carrier_offer < loadboard_rate -> confirm_offer, no price."""
+    r = _neg(carrier_offer=400, round_num=1)
+    assert r.decision == "confirm_offer"
+    assert r.agent_price is None
+    assert r.negotiation_status == "needs_confirmation"
+    assert r.message is not None and len(r.message) > 0
+    assert "400" in r.message
+    assert "1,250" in r.message  # loadboard_rate present in message
+
+
+def test_at_loadboard_rate_goes_through_normal_path():
+    """carrier_offer == loadboard_rate is NOT sub-loadboard; accept/counter/final as usual."""
+    r = _neg(carrier_offer=1250, round_num=1)
+    # 1250 == loadboard_rate; step1 = 1300; 1250 <= 1300 -> accept
+    assert r.decision == "accept"
+    assert r.agent_price == 1250
+
+
+@pytest.mark.asyncio
+async def test_confirm_offer_writes_no_event_row(client):
+    """A confirm_offer must not write a negotiation_events row."""
+    run = "confirm-001"
+    resp = await client.post(
+        "/negotiate",
+        json={"run_id": run, "load_id": "LD-001", "carrier_offer": 400},
+        headers=VALID,
+    )
+    assert resp.status_code == 200
+    d = resp.json()
+    assert d["decision"] == "confirm_offer"
+    assert d["agent_price"] is None
+    assert d["negotiation_status"] == "needs_confirmation"
+    assert d["message"] is not None
+
+    # Fetch calls row — must NOT have final_rate set
+    calls = await client.post("/calls", json={"run_id": run}, headers=VALID)
+    assert calls.json()["final_rate"] is None
+
+
+@pytest.mark.asyncio
+async def test_confirm_offer_does_not_consume_a_round(client):
+    """Round counter is unchanged after a confirm_offer; next valid offer is still round 1."""
+    run = "confirm-002"
+
+    # Mis-transcription: sub-loadboard offer
+    r_bad = await client.post(
+        "/negotiate",
+        json={"run_id": run, "load_id": "LD-001", "carrier_offer": 400},
+        headers=VALID,
+    )
+    assert r_bad.json()["decision"] == "confirm_offer"
+    assert r_bad.json()["round"] == 1  # what round WOULD be; counter not advanced
+
+    # Corrected offer: now proceeds as round 1
+    r_good = await client.post(
+        "/negotiate",
+        json={"run_id": run, "load_id": "LD-001", "carrier_offer": 1400},
+        headers=VALID,
+    )
+    assert r_good.json()["round"] == 1
+    assert r_good.json()["decision"] == "counter"
+
+
+@pytest.mark.asyncio
+async def test_confirm_offer_sets_no_final_rate(client):
+    """confirm_offer must never write final_rate, even if called multiple times."""
+    run = "confirm-003"
+    for _ in range(2):
+        await client.post(
+            "/negotiate",
+            json={"run_id": run, "load_id": "LD-001", "carrier_offer": 1},
+            headers=VALID,
+        )
+    calls = await client.post("/calls", json={"run_id": run}, headers=VALID)
+    assert calls.json()["final_rate"] is None
+    # And the round counter is still 1 (no events written)
+    r = await client.post(
+        "/negotiate",
+        json={"run_id": run, "load_id": "LD-001", "carrier_offer": 1400},
+        headers=VALID,
+    )
+    assert r.json()["round"] == 1

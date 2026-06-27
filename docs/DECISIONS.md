@@ -115,3 +115,13 @@ this matches the demo scope and avoids premature surface area.
 - **5-second timeout on FMCSA call** - keeps call latency bounded; FMCSA QCMobile is occasionally slow and a hung request would stall the voice session.
 - **`legalName` preferred over `dbaName`** - legal name is the authoritative carrier identity; DBA is a fallback for carriers that only register a trade name.
 - **`unittest.mock` for httpx, no extra test dependencies** - `respx` would be cleaner but adds a dependency; `AsyncMock` over `httpx.AsyncClient` is sufficient for the three required cases.
+
+## confirm_offer — sub-loadboard offer floor
+
+**Problem.** A live call exposed a bug: a carrier mis-stated "400" when they meant "3400" on a $3,200 load. The server accepted `carrier_offer=400`, wrote `final_rate=400`, and the agent confirmed a rate the carrier never intended.
+
+**Decision.** Offers below the `loadboard_rate` are treated as likely mis-transcriptions (voice-to-text dropping a digit, or the carrier citing a partial figure). The negotiation service returns `decision="confirm_offer"` instead of acting on the number. This is purely advisory — no `negotiation_events` row is written, no `final_rate` is set, and the round counter does not advance. The agent handles the confirmation conversation; once the carrier corrects themselves, the next `/negotiate` call proceeds as round 1.
+
+**Why not 422/reject.** A hard rejection would stall the agent with no recovery path inside the workflow. `confirm_offer` gives the agent a clear branch: ask the carrier to restate their number, then retry. The backend stays advisory; the conversational repair is the agent's job.
+
+**Scope.** The floor is strictly `carrier_offer < loadboard_rate`. At or above the posted rate (`==` included) the normal accept/counter/final path runs unchanged. An absurdly high offer is not a mis-transcription risk; it just becomes a counter or final at the ceiling.

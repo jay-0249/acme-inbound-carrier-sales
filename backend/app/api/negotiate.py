@@ -23,7 +23,7 @@ async def negotiate_endpoint(
     round_num: int = (
         await db.execute(
             select(func.count()).where(
-                NegotiationEvent.run_id == body.run_id, 
+                NegotiationEvent.run_id == body.run_id,
                 NegotiationEvent.load_id == body.load_id,
             )
         )
@@ -42,9 +42,23 @@ async def negotiate_endpoint(
         round_num=round_num,
     )
 
+    # confirm_offer: sub-loadboard offer treated as likely mis-transcription.
+    # No event row written, no final_rate set, round counter not consumed.
+    # Purely advisory — the agent handles the confirmation conversation.
+    if result.decision == "confirm_offer":
+        return NegotiateResponse(
+            run_id=body.run_id,
+            round=round_num,
+            decision=result.decision,
+            agent_price=None,
+            ceiling=result.ceiling,
+            negotiation_status=result.negotiation_status,
+            message=result.message,
+        )
+
     now = datetime.utcnow()
 
-    # Each invocation writes exactly one event row, advancing the round counter.
+    # Each normal invocation writes exactly one event row, advancing the round counter.
     db.add(NegotiationEvent(
         run_id=body.run_id,
         round=round_num,

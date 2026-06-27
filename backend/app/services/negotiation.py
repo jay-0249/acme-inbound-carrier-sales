@@ -7,17 +7,18 @@ Future extension points (decided server-side, NEVER supplied by the agent):
   - sentiment: "positive" | "neutral" | "negative" — could tighten/loosen band.
 These are server-owned signals; the agent only ever sends carrier_offer.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
 
 @dataclass
 class NegotiationResult:
-    decision: str           # "accept" | "counter" | "final"
-    agent_price: float
+    decision: str                    # "accept" | "counter" | "final" | "confirm_offer"
+    agent_price: Optional[float]     # null for confirm_offer; exact price otherwise
     ceiling: float
-    negotiation_status: str  # "negotiating" | "ceiling_reached"
+    negotiation_status: str          # "negotiating" | "ceiling_reached" | "needs_confirmation"
+    message: Optional[str] = field(default=None)
 
 
 def compute_ceiling(loadboard_rate: float, days_to_pickup: int) -> float:
@@ -56,6 +57,22 @@ def negotiate(
 
     days = (pickup_date - today).days
     ceiling = compute_ceiling(loadboard_rate, days)
+
+    # Floor check: offers below the posted rate are treated as likely
+    # mis-transcriptions (voice dropping a digit). Flag back to the agent
+    # for confirmation — no event written, no state change.
+    if carrier_offer < loadboard_rate:
+        return NegotiationResult(
+            decision="confirm_offer",
+            agent_price=None,
+            ceiling=ceiling,
+            negotiation_status="needs_confirmation",
+            message=(
+                f"Offered ${carrier_offer:,.0f} is below the posted rate of "
+                f"${loadboard_rate:,.0f}. The carrier may have misspoken — "
+                f"confirm the intended number before continuing."
+            ),
+        )
 
     # Rounded step (before any decision)
     step = _round25(_raw_step(loadboard_rate, ceiling, round_num))
