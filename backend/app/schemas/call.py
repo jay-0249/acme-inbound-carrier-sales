@@ -37,7 +37,6 @@ class CallResponse(BaseModel):
     carrier_name: Optional[str]
     carrier_eligible: Optional[bool]
     load_id: Optional[str]
-    load_found: Optional[bool]
     outcome: Optional[str]
     outcome_source: Optional[str]
     sentiment: Optional[str]

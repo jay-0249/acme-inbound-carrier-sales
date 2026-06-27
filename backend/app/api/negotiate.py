@@ -22,7 +22,10 @@ async def negotiate_endpoint(
     # Server derives round from event count — agent never supplies this.
     round_num: int = (
         await db.execute(
-            select(func.count()).where(NegotiationEvent.run_id == body.run_id)
+            select(func.count()).where(
+                NegotiationEvent.run_id == body.run_id, 
+                NegotiationEvent.load_id == body.load_id,
+            )
         )
     ).scalar_one() + 1
 
