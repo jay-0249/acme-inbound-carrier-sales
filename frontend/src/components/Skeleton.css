@@ -1,0 +1,64 @@
+.skeleton-wrap {
+  max-width: 1280px;
+  margin: 24px auto 0;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.skel {
+  background: var(--surface);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%);
+    animation: shimmer 1.4s infinite;
+  }
+}
+
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+.skel-hero {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.skel-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 16px;
+}
+
+.skel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skel-wide  { flex: 1; }
+.skel-wider { flex: 1.6; }
+
+@media (max-width: 900px) {
+  .skel-hero { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 520px) {
+  .skel-hero { grid-template-columns: 1fr; }
+  .skel-row  { grid-template-columns: 1fr; }
+}

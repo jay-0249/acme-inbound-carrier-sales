@@ -1,0 +1,82 @@
+.neg-bar-wrap {
+  padding: 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.neg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.neg-avg {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.neg-avg-num {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.neg-avg-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.neg-track {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.neg-segment {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neg-legend {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.neg-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.neg-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.neg-legend-label {
+  color: var(--muted);
+}
+
+.neg-legend-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.neg-empty {
+  font-size: 13px;
+  color: var(--muted);
+}

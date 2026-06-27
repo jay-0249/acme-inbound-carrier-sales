@@ -1,0 +1,137 @@
+.health-strip {
+  padding: 20px 32px;
+}
+
+.health-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.health-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.health-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.health-value {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--teal);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-divider {
+  width: 1px;
+  height: 80px;
+  background: var(--border);
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.health-sentiment {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Sentiment legend */
+.sent-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 2px;
+}
+
+.sent-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sent-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Stacked sentiment rows */
+.sent-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sent-row {
+  display: grid;
+  grid-template-columns: 68px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.sent-row-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sentiment-track {
+  display: flex;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 1px;
+  background: rgba(255,255,255,0.04);
+}
+
+.sent-seg {
+  height: 100%;
+}
+
+.sent-positive { background: var(--teal); border-radius: 3px 0 0 3px; }
+.sent-neutral  { background: rgba(139, 147, 161, 0.4); }
+.sent-negative { background: var(--clay); border-radius: 0 3px 3px 0; }
+
+.sent-counts-inline {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Legacy single-row labels (used only via .sent-counts-inline now) */
+.sent-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sent-label.positive { color: var(--teal); }
+.sent-label.neutral  { color: var(--muted); }
+.sent-label.negative { color: var(--clay); }
+
+/* Honesty caption */
+.sent-honesty {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 2px;
+}

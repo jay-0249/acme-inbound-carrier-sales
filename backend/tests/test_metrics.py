@@ -152,8 +152,10 @@ async def test_metrics_full_shape(client):
     assert "outcome" in data["top_decline_reason"]
 
     sent = data["sentiment"]
-    for key in ("positive", "neutral", "negative"):
-        assert key in sent
+    for group in ("overall", "booked", "not_booked"):
+        assert group in sent, f"sentiment missing '{group}'"
+        for key in ("positive", "neutral", "negative"):
+            assert key in sent[group], f"sentiment.{group} missing '{key}'"
 
     neg = data["negotiation"]
     assert "avg_rounds_to_close" in neg
@@ -261,9 +263,24 @@ async def test_sentiment_counts_sum_to_total(client):
     await _seed(client)
     resp = await client.get("/metrics", headers=VALID)
     data = resp.json()
-    sent = data["sentiment"]
+    overall = data["sentiment"]["overall"]
     total = data["capacity"]["calls_handled"]
-    assert sent["positive"] + sent["neutral"] + sent["negative"] == total
+    assert overall["positive"] + overall["neutral"] + overall["negative"] == total
+
+
+@pytest.mark.asyncio
+async def test_sentiment_booked_not_booked_split(client):
+    """booked + not_booked sentiment counts sum to overall."""
+    await _seed(client)
+    resp = await client.get("/metrics", headers=VALID)
+    data = resp.json()
+    sent = data["sentiment"]
+    for key in ("positive", "neutral", "negative"):
+        assert sent["booked"][key] + sent["not_booked"][key] == sent["overall"][key], (
+            f"sentiment.{key}: booked+not_booked != overall"
+        )
+    # Booked calls should be present and have non-trivial positive sentiment
+    assert sent["booked"]["positive"] > 0
 
 
 @pytest.mark.asyncio

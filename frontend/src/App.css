@@ -1,0 +1,82 @@
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Error state */
+.error-state {
+  max-width: 480px;
+  margin: 80px auto;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.error-detail {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.error-detail code,
+.error-hint code {
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 12px;
+  background: var(--surface);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.error-hint {
+  font-size: 12px;
+  color: var(--clay);
+}
+
+/* Shared card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Shared section label */
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+/* Fade-rise animation */
+@keyframes fadeRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-in {
+    animation: fadeRise 400ms ease-out both;
+  }
+}

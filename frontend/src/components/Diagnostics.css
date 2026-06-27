@@ -1,0 +1,20 @@
+.diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.diag-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 16px;
+}
+
+.diag-left,
+.diag-right {
+  padding: 28px 32px;
+}
+
+@media (max-width: 860px) {
+  .diag-row { grid-template-columns: 1fr; }
+}

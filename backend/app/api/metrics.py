@@ -15,6 +15,7 @@ from app.schemas.metrics import (
     NegotiationMetrics,
     OutcomeCount,
     RecentCall,
+    SentimentBreakdown,
     SentimentCounts,
     TopDeclineReason,
     UrgencyTierMetric,
@@ -132,8 +133,11 @@ async def get_metrics(
     else:
         top_decline_out, top_decline_cnt = "none", 0
 
-    # --- Sentiment ---
-    sentiment_counter: Counter = Counter(c.sentiment or "neutral" for c in all_calls)
+    # --- Sentiment (overall + booked vs not-booked split) ---
+    not_booked_calls = [c for c in all_calls if c.outcome != "booked"]
+    sentiment_counter:     Counter = Counter(c.sentiment or "neutral" for c in all_calls)
+    sentiment_booked:      Counter = Counter(c.sentiment or "neutral" for c in booked_calls)
+    sentiment_not_booked:  Counter = Counter(c.sentiment or "neutral" for c in not_booked_calls)
 
     # --- Negotiation ---
     # Booked calls that went through at least one negotiation round
@@ -205,10 +209,22 @@ async def get_metrics(
         ),
         outcomes=outcomes_list,
         top_decline_reason=TopDeclineReason(outcome=top_decline_out, count=top_decline_cnt),
-        sentiment=SentimentCounts(
-            positive=sentiment_counter.get("positive", 0),
-            neutral=sentiment_counter.get("neutral", 0),
-            negative=sentiment_counter.get("negative", 0),
+        sentiment=SentimentBreakdown(
+            overall=SentimentCounts(
+                positive=sentiment_counter.get("positive", 0),
+                neutral=sentiment_counter.get("neutral", 0),
+                negative=sentiment_counter.get("negative", 0),
+            ),
+            booked=SentimentCounts(
+                positive=sentiment_booked.get("positive", 0),
+                neutral=sentiment_booked.get("neutral", 0),
+                negative=sentiment_booked.get("negative", 0),
+            ),
+            not_booked=SentimentCounts(
+                positive=sentiment_not_booked.get("positive", 0),
+                neutral=sentiment_not_booked.get("neutral", 0),
+                negative=sentiment_not_booked.get("negative", 0),
+            ),
         ),
         negotiation=NegotiationMetrics(
             avg_rounds_to_close=round(avg_rounds_to_close, 4),

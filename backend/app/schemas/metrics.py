@@ -49,6 +49,12 @@ class SentimentCounts(BaseModel):
     negative: int
 
 
+class SentimentBreakdown(BaseModel):
+    overall: SentimentCounts
+    booked: SentimentCounts
+    not_booked: SentimentCounts
+
+
 class NegotiationMetrics(BaseModel):
     avg_rounds_to_close: float
     settled_distribution: dict[str, int]
@@ -74,6 +80,6 @@ class MetricsResponse(BaseModel):
     margin: MarginMetrics
     outcomes: list[OutcomeCount]
     top_decline_reason: TopDeclineReason
-    sentiment: SentimentCounts
+    sentiment: SentimentBreakdown
     negotiation: NegotiationMetrics
     recent_calls: list[RecentCall]
