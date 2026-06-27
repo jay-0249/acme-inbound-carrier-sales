@@ -21,7 +21,8 @@ class ValueModel(BaseModel):
 
 class UrgencyTierMetric(BaseModel):
     tier: str
-    avg_pct_over_loadboard: float
+    avg_pct_over_loadboard: float   # realized — need not be monotonic
+    ceiling_multiplier: float        # designed ceiling (1.08 / 1.06 / 1.04)
     loads: int
 
 

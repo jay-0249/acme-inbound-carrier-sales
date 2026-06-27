@@ -323,9 +323,9 @@ time-series. The frontend makes one call and renders all panels.
     "avg_pct_over_loadboard": 0.018500,
     "total_dollars_over_loadboard": 1240.00,
     "by_urgency_tier": [
-      {"tier": "<=2 days (8%)", "avg_pct_over_loadboard": 0.022, "loads": 9},
-      {"tier": "3-5 days (6%)", "avg_pct_over_loadboard": 0.018, "loads": 10},
-      {">5 days (4%)",           "avg_pct_over_loadboard": 0.011, "loads": 9}
+      {"tier": "<=2 days (8%)", "avg_pct_over_loadboard": 0.022, "ceiling_multiplier": 1.08, "loads": 9},
+      {"tier": "3-5 days (6%)", "avg_pct_over_loadboard": 0.007, "ceiling_multiplier": 1.06, "loads": 6},
+      {"tier": ">5 days (4%)",  "avg_pct_over_loadboard": 0.015, "ceiling_multiplier": 1.04, "loads": 10}
     ]
   },
   "outcomes": [
@@ -369,9 +369,9 @@ time-series. The frontend makes one call and renders all panels.
 |-------|-------------|
 | `capacity.calls_missed` | Always 0. The agent answers every inbound call; there is no missed-call signal in the current HappyRobot integration. Documented as a measured stance, not a gap. |
 | `capacity.calls_after_hours` | `created_at` before 8am or at/after 6pm UTC, or on a Saturday/Sunday. |
-| `capacity.automation_rate` | Calls whose outcome is NOT `transferred_to_human`, divided by total. |
+| `capacity.automation_rate` | Share of calls the agent resolved to a definitive outcome (all taxonomy tags except `other`), divided by total. `other` is the proxy for calls the agent could not cleanly resolve; the POC has no live human-transfer wired, so every non-`other` outcome represents an agent-handled call. |
 | `value_model.*` | Explicitly modeled estimates. `assumed_loaded_wage_per_hour` ($48) and `assumed_agent_cost_per_call` ($0.75) are stated assumptions; all other figures are measured from the DB. The UI must display these as estimates with stated assumptions. |
-| `margin.by_urgency_tier` | Urgency tier uses the same `days_to_pickup` logic as `/negotiate`: (pickup_date - today).days, with tiers <=2 / 3-5 / >5. |
+| `margin.by_urgency_tier` | Each entry has `avg_pct_over_loadboard` (realized, measured), `ceiling_multiplier` (designed ceiling: 1.08/1.06/1.04), and `loads` (booked count). Realized margin need not descend monotonically — posted-rate bookings pull tier averages down independently of urgency. The UI should display realized margin vs. ceiling per tier, not imply the realized values follow the ceiling pattern. Tier boundaries use the same `(pickup_date - today).days` formula as `/negotiate`. |
 | `margin.avg_pct_over_loadboard` | Mean over booked calls with a known load and final_rate. 0..1 float (multiply by 100 for %). |
 | `outcomes` | Ranked descending by count. `pct` sums to 1.0 over all entries. |
 | `top_decline_reason` | Largest non-booked outcome. |

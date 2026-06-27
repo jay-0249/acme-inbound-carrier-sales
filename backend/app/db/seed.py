@@ -308,8 +308,8 @@ _SEED_CALLS_SPEC: list[tuple] = [
     # --- equipment_mismatch (2 rows) ---
     ("044", 3,  10, 30, "equipment_mismatch", "neutral", "LD-002", None, 65,  False, 0),
     ("045", 8,  14, 0,  "equipment_mismatch", "neutral", "LD-003", None, 70,  False, 0),
-    # --- transferred_to_human (1 row) ---
-    ("046", 5,  11, 0,  "transferred_to_human", "neutral", "LD-009", None, 110, False, 0),
+    # --- other (1 row: call that could not be cleanly resolved/classified) ---
+    ("046", 5,  11, 0,  "other", "neutral", "LD-009", None, 110, False, 0),
 ]
 
 

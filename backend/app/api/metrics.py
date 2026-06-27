@@ -23,12 +23,19 @@ from app.schemas.metrics import (
 
 router = APIRouter(tags=["metrics"])
 
-_NON_AUTOMATED = {"transferred_to_human"}
+# automation_rate = share of calls the agent resolved to a definitive outcome.
+# "other" is the only tag that represents a call the agent could not cleanly
+# resolve (unclassifiable / fell through); every other taxonomy tag
+# (booked, the specific declines, ineligible, not_found, etc.) means the
+# agent reached a clear terminal outcome on its own. The POC has no live
+# human-transfer wired, so "other" is the closest proxy for needs-human.
+_UNRESOLVED_OUTCOMES = {"other"}
 
+# (label, ceiling_multiplier, days_predicate)
 _URGENCY_TIERS = [
-    ("<=2 days (8%)", lambda d: d <= 2),
-    ("3-5 days (6%)", lambda d: 3 <= d <= 5),
-    (">5 days (4%)",  lambda d: d > 5),
+    ("<=2 days (8%)", 1.08, lambda d: d <= 2),
+    ("3-5 days (6%)", 1.06, lambda d: 3 <= d <= 5),
+    (">5 days (4%)",  1.04, lambda d: d > 5),
 ]
 
 
@@ -58,11 +65,11 @@ async def get_metrics(
 
     # --- Capacity ---
     booked_calls = [c for c in all_calls if c.outcome == "booked"]
-    non_automated = [c for c in all_calls if c.outcome in _NON_AUTOMATED]
+    unresolved = [c for c in all_calls if c.outcome in _UNRESOLVED_OUTCOMES]
     after_hours = [c for c in all_calls if _is_after_hours(c.created_at)]
 
     booking_rate = len(booked_calls) / total if total else 0.0
-    automation_rate = (total - len(non_automated)) / total if total else 0.0
+    automation_rate = (total - len(unresolved)) / total if total else 0.0
 
     total_duration = sum(c.duration or 0.0 for c in all_calls)
     rep_hours_freed = total_duration / 3600.0
@@ -87,7 +94,7 @@ async def get_metrics(
     total_dollars_over = sum(dollars_over_list)
 
     tier_rows: list[UrgencyTierMetric] = []
-    for label, predicate in _URGENCY_TIERS:
+    for label, ceiling_mult, predicate in _URGENCY_TIERS:
         tier_calls = [
             c for c in booked_with_load
             if predicate((loads_by_id[c.load_id].pickup_datetime.date() - today).days)
@@ -103,6 +110,7 @@ async def get_metrics(
         tier_rows.append(UrgencyTierMetric(
             tier=label,
             avg_pct_over_loadboard=round(avg_t, 6),
+            ceiling_multiplier=ceiling_mult,
             loads=len(tier_calls),
         ))
 

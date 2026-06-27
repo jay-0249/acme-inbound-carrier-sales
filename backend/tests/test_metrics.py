@@ -144,6 +144,8 @@ async def test_metrics_full_shape(client):
     assert "<=2 days (8%)" in tier_labels
     assert "3-5 days (6%)" in tier_labels
     assert ">5 days (4%)" in tier_labels
+    for t in tiers:
+        assert "ceiling_multiplier" in t
 
     assert isinstance(data["outcomes"], list)
     assert len(data["outcomes"]) > 0
@@ -177,8 +179,8 @@ async def test_booking_rate(client):
 
 
 @pytest.mark.asyncio
-async def test_automation_rate_no_transferred_calls(client):
-    """With only automated outcomes, automation_rate should be 1.0."""
+async def test_automation_rate_no_other_outcomes(client):
+    """With only definitive outcomes (no 'other'), automation_rate should be 1.0."""
     from app.db.database import get_db
     from app.main import app
 
@@ -200,13 +202,13 @@ async def test_automation_rate_no_transferred_calls(client):
 
 
 @pytest.mark.asyncio
-async def test_automation_rate_with_transfer(client):
-    """A single transferred_to_human call must lower automation_rate below 1."""
+async def test_automation_rate_with_other_outcome(client):
+    """A single 'other' call (unresolved proxy) must lower automation_rate below 1."""
     from app.db.database import get_db
     from app.main import app
 
     async for db in app.dependency_overrides[get_db]():
-        for rid, outcome in [("aut-a", "booked"), ("aut-b", "transferred_to_human")]:
+        for rid, outcome in [("aut-a", "booked"), ("aut-b", "other")]:
             db.add(Call(
                 run_id=rid, outcome=outcome, outcome_source="classified",
                 sentiment="neutral", duration=60.0,
@@ -217,6 +219,41 @@ async def test_automation_rate_with_transfer(client):
     resp = await client.get("/metrics", headers=VALID)
     data = resp.json()
     assert data["capacity"]["automation_rate"] == pytest.approx(0.5, rel=1e-4)
+
+
+@pytest.mark.asyncio
+async def test_seed_outcomes_are_valid_taxonomy(client):
+    """Every seed call must use one of the 7 canonical outcome tags."""
+    VALID_OUTCOMES = {
+        "booked", "carrier_ineligible", "load_not_found",
+        "equipment_mismatch", "negotiation_failed", "not_interested", "other",
+    }
+    await _seed(client)
+
+    from app.db.database import get_db
+    from app.main import app
+    from sqlalchemy import select
+
+    async for db in app.dependency_overrides[get_db]():
+        rows = list((await db.execute(select(Call))).scalars().all())
+        break
+
+    for row in rows:
+        assert row.outcome in VALID_OUTCOMES, (
+            f"run_id={row.run_id!r} has off-taxonomy outcome {row.outcome!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_automation_rate_seeded_data(client):
+    """automation_rate over seed = (non-other outcomes) / total; must be between 0 and 1."""
+    await _seed(client)
+    resp = await client.get("/metrics", headers=VALID)
+    data = resp.json()
+    rate = data["capacity"]["automation_rate"]
+    assert 0.0 <= rate <= 1.0
+    # Seed has 1 'other' row out of 46 total -> 45/46 ~= 0.978
+    assert rate == pytest.approx(45 / 46, rel=1e-4)
 
 
 @pytest.mark.asyncio
@@ -249,22 +286,20 @@ async def test_top_decline_reason_is_not_booked(client):
 
 @pytest.mark.asyncio
 async def test_margin_by_urgency_tier_within_bands(client):
-    """avg_pct_over_loadboard per tier must not exceed the ceiling multiplier - 1."""
+    """Realized avg_pct_over_loadboard must not exceed the tier's ceiling_multiplier - 1.
+
+    Realized margin need not be monotonic across tiers (posted-rate bookings
+    pull individual tier averages down); the ceiling_multiplier is the design
+    ceiling, not the realized outcome.
+    """
     await _seed(client)
     resp = await client.get("/metrics", headers=VALID)
     data = resp.json()
-    tiers = {t["tier"]: t for t in data["margin"]["by_urgency_tier"]}
-
-    # Urgency tiers: <=2 days (<=8%), 3-5 days (<=6%), >5 days (<=4%)
-    # Some bookings are at posted rate (0% over), so the averages are lower.
-    for label, cap in [
-        ("<=2 days (8%)", 0.08),
-        ("3-5 days (6%)", 0.06),
-        (">5 days (4%)", 0.04),
-    ]:
-        if tiers[label]["loads"] > 0:
-            assert tiers[label]["avg_pct_over_loadboard"] <= cap + 1e-6, (
-                f"{label}: {tiers[label]['avg_pct_over_loadboard']} > {cap}"
+    for t in data["margin"]["by_urgency_tier"]:
+        cap = t["ceiling_multiplier"] - 1.0
+        if t["loads"] > 0:
+            assert t["avg_pct_over_loadboard"] <= cap + 1e-6, (
+                f"{t['tier']}: realized {t['avg_pct_over_loadboard']:.4%} > ceiling {cap:.4%}"
             )
 
 

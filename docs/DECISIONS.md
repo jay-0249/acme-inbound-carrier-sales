@@ -78,7 +78,23 @@ this matches the demo scope and avoids premature surface area.
 - **urgency tier in /metrics uses pickup_datetime from the joined load** - same
   `(pickup_date - today).days` formula as /negotiate so tier assignments are
   consistent across the system.
-- **Synthetic seed prefixed "seed-"** - all 40 synthetic call rows have `run_id`
+- **margin.by_urgency_tier shows REALIZED margin alongside the designed ceiling** - each
+  tier entry returns both `avg_pct_over_loadboard` (measured) and `ceiling_multiplier`
+  (the 1.08/1.06/1.04 design ceiling). Realized margin need not descend monotonically
+  across tiers: a carrier who accepts the posted rate contributes 0% over loadboard
+  regardless of urgency tier, and posted-rate bookings are distributed unevenly across
+  tiers in both real and seed data. The 8/6/4% pattern is the ceiling for what we CAN
+  pay, not a guarantee of what we DO pay. The seed is NOT rearranged to force a clean
+  descent — that would be reverse-engineering data to produce a prettier chart. The UI
+  should frame this as "realized margin vs. ceiling by tier" so the asymmetry is honest.
+- **automation_rate = (non-"other" outcomes) / total** - the outcome taxonomy has no
+  explicit "transferred to human" tag, and the POC has no live human-transfer wired.
+  `other` is the catch-all for calls the agent could not cleanly resolve or classify,
+  making it the closest honest proxy for "needed a human / fell through". Every other
+  tag (booked, the specific declines, ineligible, not_found, mismatch) represents a
+  clear terminal outcome the agent reached on its own. This definition is explainable
+  on a whiteboard without inventing a new tag or stretching the taxonomy.
+- **Synthetic seed prefixed "seed-"** - all 46 synthetic call rows have `run_id`
   starting with `seed-`. This lets `seed_calls()` use a single `SELECT ... LIKE 'seed-%'`
   idempotency check (skip if any seed row exists), and keeps real test calls
   unambiguously separate. To reseed: delete the DB and restart.
